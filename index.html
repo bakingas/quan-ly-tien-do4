@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Tiến Độ Sản Xuất</title>
+    <!-- Bootstrap CSS & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .card-lsx { border-radius: 12px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .product-block { border: 1px solid #e0e6ed; border-radius: 8px; padding: 12px; background-color: #fafbfc; margin-bottom: 12px; }
+        .stage-card { background-color: #ffffff; border: 1px solid #dee2e6; border-radius: 6px; padding: 8px; }
+        .input-qty { width: 85px; text-align: center; font-weight: bold; }
+        .status-dot { height: 10px; width: 10px; background-color: #198754; border-radius: 50%; display: inline-block; }
+        .search-bar-container { background-color: #fff; border-radius: 8px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.03); }
+    </style>
+</head>
+<body class="container py-4">
+
+    <!-- Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4 bg-white p-3 rounded-3 shadow-sm">
+        <div>
+            <h2 class="text-primary fw-bold mb-0"><i class="bi bi-kanban me-2"></i>QUẢN LÝ TIẾN ĐỘ SẢN XUẤT</h2>
+            <small class="text-muted">
+                <span class="status-dot me-1"></span> Tự động cập nhật tình trạng Lệnh
+            </small>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" onclick="exportData()"><i class="bi bi-download"></i> Xuất File</button>
+            <label class="btn btn-outline-secondary btn-sm mb-0">
+                <i class="bi bi-upload"></i> Nhập File 
+                <input type="file" id="importFile" onchange="importData(event)" hidden accept=".json">
+            </label>
+            <button class="btn btn-primary fw-semibold px-3" onclick="openModal()">
+                <i class="bi bi-plus-circle me-1"></i> Tạo Lệnh Mới
+            </button>
+        </div>
+    </div>
+
+    <!-- Thanh Tìm kiếm và Lọc -->
+    <div class="search-bar-container d-flex flex-column flex-md-row gap-3">
+        <div class="flex-grow-1">
+            <div class="input-group">
+                <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                <input type="text" id="searchInput" class="form-control border-start-0 ps-0" placeholder="Tìm theo Mã Lệnh hoặc Tên Sản Phẩm..." oninput="handleSearch()">
+            </div>
+        </div>
+        <div class="flex-shrink-0" style="min-width: 200px;">
+            <select id="statusFilter" class="form-select" onchange="handleSearch()">
+                <option value="ALL">Tất cả tình trạng</option>
+                <option value="IN_PROGRESS">Đang sản xuất</option>
+                <option value="COMPLETED">Đã hoàn thành</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Danh sách Lệnh sản xuất -->
+    <div id="wo-list"></div>
+
+    <!-- Modal Tạo / Sửa Lệnh SX -->
+    <div class="modal fade" id="woModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="modalTitle">Tạo Lệnh Sản Xuất Mới</h5>
+                    <button type="button" class="btn-close" onclick="closeModal()"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="edit-wo-id">
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Mã Lệnh SX <span class="text-danger">*</span></label>
+                        <input type="text" id="code" class="form-control" placeholder="VD: LSX-001">
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label fw-semibold mb-0">Sản Phẩm Trong Đơn Hàng</label>
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addProductInput()">+ Thêm Sản Phẩm</button>
+                        </div>
+                        <div id="product-input-container"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label fw-semibold mb-0">Quy Trình Công Đoạn Mặc Định</label>
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addStageInput()">+ Thêm công đoạn</button>
+                        </div>
+                        <div id="stage-input-container"></div>
+                    </div>
+
+                    <button class="btn btn-success w-100 fw-bold py-2 mt-2" onclick="saveWO()">Lưu Lệnh Sản Xuất</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        let data = [];
+        let modal = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            modal = new bootstrap.Modal(document.getElementById('woModal'));
+            loadData();
+        });
+
+        function loadData() {
+            const stored = localStorage.getItem('work_orders_v2');
+            data = stored ? JSON.parse(stored) : [];
+            render();
+        }
+
+        function saveData() {
+            localStorage.setItem('work_orders_v2', JSON.stringify(data));
+        }
+
+        // Kiểm tra xem Lệnh SX đã hoàn thành chưa
+        function checkWOStatus(wo) {
+            if (!wo.products || wo.products.length === 0) return false;
+            
+            for (let prod of wo.products) {
+                const targetQty = parseInt(prod.qty) || 0;
+                if (targetQty === 0) continue;
+
+                if (!prod.stages || prod.stages.length === 0) return false;
+
+                for (let stage of prod.stages) {
+                    if ((parseInt(stage.done) || 0) < targetQty) {
+                        return false; // Chỉ cần 1 công đoạn chưa đủ 100% -> Đang sản xuất
+                    }
+                }
+            }
+            return true; // Tất cả đều đủ 100%
+        }
+
+        function handleSearch() {
+            render();
+        }
+
+        function render() {
+            const container = document.getElementById('wo-list');
+            const keyword = document.getElementById('searchInput').value.toLowerCase().trim();
+            const statusFilter = document.getElementById('statusFilter').value;
+
+            // Xử lý Lọc Dữ Liệu
+            const filteredData = data.filter(wo => {
+                const isCompleted = checkWOStatus(wo);
+                const woStatus = isCompleted ? 'COMPLETED' : 'IN_PROGRESS';
+                
+                // Lọc theo trạng thái
+                if (statusFilter !== 'ALL' && woStatus !== statusFilter) {
+                    return false;
+                }
+
+                // Lọc theo từ khóa (Mã lệnh hoặc Tên sản phẩm)
+                if (keyword) {
+                    const matchCode = wo.code.toLowerCase().includes(keyword);
+                    const matchProduct = wo.products && wo.products.some(p => p.name.toLowerCase().includes(keyword));
+                    if (!matchCode && !matchProduct) return false;
+                }
+
+                return true;
+            });
+
+            if (filteredData.length === 0) {
+                container.innerHTML = `<div class="alert alert-secondary text-center py-4">Không tìm thấy Lệnh sản xuất nào phù hợp!</div>`;
+                return;
+            }
+
+            container.innerHTML = filteredData.map(wo => {
+                const products = wo.products || [];
+                const isWOCompleted = checkWOStatus(wo);
+
+                return `
+                    <div class="card card-lsx p-3 bg-white" id="wo-card-${wo.id}">
+                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3 pb-2 border-bottom gap-2">
+                            <div class="d-flex align-items-center gap-3">
+                                <h4 class="mb-0 text-primary fw-bold"><i class="bi bi-file-earmark-text me-1"></i>${wo.code}</h4>
+                                ${isWOCompleted 
+                                    ? '<span class="badge bg-success bg-opacity-10 text-success border border-success"><i class="bi bi-check-circle me-1"></i>Đã hoàn thành</span>' 
+                                    : '<span class="badge bg-warning bg-opacity-10 text-warning border border-warning"><i class="bi bi-clock-history me-1"></i>Đang sản xuất</span>'
+                                }
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-outline-secondary me-1" onclick="openModal('${wo.id}')"><i class="bi bi-pencil"></i> Sửa</button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteWO('${wo.id}')"><i class="bi bi-trash"></i> Xóa</button>
+                            </div>
+                        </div>
+
+                        <!-- Danh sách từng sản phẩm -->
+                        <div class="d-flex flex-column gap-3">
+                            ${products.map((prod, pIdx) => `
+                                <div class="product-block">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <h6 class="mb-0 fw-bold text-dark">
+                                            <i class="bi bi-box-seam text-secondary me-2"></i>${prod.name}
+                                        </h6>
+                                        <span class="badge bg-secondary">Số lượng: ${prod.qty} SP</span>
+                                    </div>
+
+                                    <div class="row g-2 mt-1">
+                                        ${(prod.stages || []).map((st, sIdx) => {
+                                            const targetQty = parseInt(prod.qty) || 0;
+                                            const percent = targetQty > 0 ? Math.round(((st.done || 0) / targetQty) * 100) : 0;
+                                            const isFinished = percent === 100;
+
+                                            return `
+                                                <div class="col-md-4 col-sm-6">
+                                                    <div class="stage-card">
+                                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                                            <small class="fw-bold text-truncate">${sIdx + 1}. ${st.name}</small>
+                                                            <small id="pct-${wo.id}-${pIdx}-${sIdx}" class="fw-bold ${isFinished ? 'text-success' : 'text-primary'}">${percent}%</small>
+                                                        </div>
+                                                        <div class="progress mb-2" style="height: 6px;">
+                                                            <div id="bar-${wo.id}-${pIdx}-${sIdx}" class="progress-bar ${isFinished ? 'bg-success' : 'bg-primary'}" style="width: ${percent}%"></div>
+                                                        </div>
+                                                        <div class="d-flex justify-content-between align-items-center">
+                                                            <small class="text-muted">Hoàn thành:</small>
+                                                            <input type="number" 
+                                                                   class="form-control form-control-sm input-qty" 
+                                                                   min="0" 
+                                                                   max="${targetQty}" 
+                                                                   value="${st.done || 0}" 
+                                                                   oninput="updateProductStageInline('${wo.id}', ${pIdx}, ${sIdx}, this.value, ${targetQty})">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Cập nhật giá trị và re-render để check lại trạng thái tổng thể
+        function updateProductStageInline(woId, productIdx, stageIdx, newDone, targetQty) {
+            let val = parseInt(newDone) || 0;
+            if (val > targetQty) val = targetQty;
+            if (val < 0) val = 0;
+
+            const wo = data.find(item => item.id == woId);
+            if (wo && wo.products && wo.products[productIdx]) {
+                wo.products[productIdx].stages[stageIdx].done = val;
+                saveData();
+                
+                // Ở bản này, vì trạng thái Lệnh (Đang SX/Hoàn thành) có thể thay đổi sau khi nhập số, 
+                // chúng ta gọi hàm render() để vẽ lại bộ nhãn và danh sách thay vì chỉ update inline.
+                render(); 
+                
+                // Trả lại focus cho ô input vừa nhập để người dùng gõ số mượt mà
+                setTimeout(() => {
+                    const cards = document.getElementById(`wo-card-${woId}`);
+                    if (cards) {
+                        const inputs = cards.querySelectorAll('.input-qty');
+                        const targetInputIndex = (productIdx * wo.products[0].stages.length) + stageIdx;
+                        if(inputs[targetInputIndex]) {
+                            inputs[targetInputIndex].focus();
+                        }
+                    }
+                }, 0);
+            }
+        }
+
+        function getProductsFromDOM() {
+            const rows = document.querySelectorAll('.product-row');
+            const products = [];
+            rows.forEach(row => {
+                const nameInput = row.querySelector('.prod-name');
+                const qtyInput = row.querySelector('.prod-qty');
+                if (nameInput && qtyInput) {
+                    products.push({ name: nameInput.value, qty: parseInt(qtyInput.value) || 0 });
+                }
+            });
+            return products;
+        }
+
+        function getStagesFromDOM() {
+            return Array.from(document.querySelectorAll('.stage-name')).map(i => i.value);
+        }
+
+        function renderProductInputs(products) {
+            const container = document.getElementById('product-input-container');
+            const showDelete = products.length > 1;
+            container.innerHTML = products.map((p, idx) => `
+                <div class="row g-2 mb-2 align-items-center product-row">
+                    <div class="col-7">
+                        <input type="text" class="form-control prod-name" value="${p.name}" placeholder="Tên sản phẩm">
+                    </div>
+                    <div class="col-3">
+                        <input type="number" class="form-control prod-qty" value="${p.qty}" min="1" placeholder="Số lượng">
+                    </div>
+                    <div class="col-2">
+                        ${showDelete ? `<button class="btn btn-outline-danger w-100" type="button" onclick="removeProductInput(${idx})">Xóa</button>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function addProductInput() {
+            const current = getProductsFromDOM();
+            current.push({ name: '', qty: 100 });
+            renderProductInputs(current);
+        }
+
+        function removeProductInput(idx) {
+            const current = getProductsFromDOM();
+            if (current.length > 1) {
+                current.splice(idx, 1);
+                renderProductInputs(current);
+            }
+        }
+
+        function renderStageInputs(stages) {
+            const container = document.getElementById('stage-input-container');
+            const showDelete = stages.length > 1;
+            container.innerHTML = stages.map((stage, idx) => `
+                <div class="input-group mb-2">
+                    <span class="input-group-text">${idx + 1}</span>
+                    <input type="text" class="form-control stage-name" value="${stage}" placeholder="Tên công đoạn">
+                    ${showDelete ? `<button class="btn btn-outline-danger" type="button" onclick="removeStageInput(${idx})">Xóa</button>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function addStageInput() {
+            const current = getStagesFromDOM();
+            current.push('');
+            renderStageInputs(current);
+        }
+
+        function removeStageInput(idx) {
+            const current = getStagesFromDOM();
+            if (current.length > 1) {
+                current.splice(idx, 1);
+                renderStageInputs(current);
+            }
+        }
+
+        function openModal(woId = null) {
+            if (woId) {
+                const wo = data.find(item => item.id == woId);
+                if (!wo) return;
+                document.getElementById('modalTitle').innerText = 'Chỉnh Sửa Lệnh Sản Xuất';
+                document.getElementById('edit-wo-id').value = wo.id;
+                document.getElementById('code').value = wo.code;
+                renderProductInputs(wo.products || []);
+                const defaultStages = wo.products && wo.products[0] ? wo.products[0].stages.map(s => s.name) : [];
+                renderStageInputs(defaultStages);
+            } else {
+                document.getElementById('modalTitle').innerText = 'Tạo Lệnh Sản Xuất Mới';
+                document.getElementById('edit-wo-id').value = '';
+                document.getElementById('code').value = '';
+                renderProductInputs([{ name: '', qty: 100 }]);
+                renderStageInputs(['Cắt', 'Hàn', 'Sơn', 'Lắp Ráp', 'Đóng Gói']);
+            }
+            if (modal) modal.show();
+        }
+
+        function closeModal() { if (modal) modal.hide(); }
+
+        function saveWO() {
+            const woId = document.getElementById('edit-wo-id').value;
+            const code = document.getElementById('code').value.trim();
+            const currentProducts = getProductsFromDOM();
+            const currentStages = getStagesFromDOM().map(s => s.trim()).filter(s => s !== '');
+
+            const validProducts = currentProducts
+                .map(p => ({ name: p.name.trim(), qty: parseInt(p.qty) || 0 }))
+                .filter(p => p.name !== '' && p.qty > 0);
+
+            if (!code) return alert('Vui lòng nhập Mã Lệnh!');
+            if (validProducts.length === 0) return alert('Vui lòng thêm ít nhất 1 Sản phẩm hợp lệ!');
+            if (currentStages.length === 0) return alert('Vui lòng thêm ít nhất 1 công đoạn!');
+            
+            if (data.some(item => item.code.toLowerCase() === code.toLowerCase() && item.id != woId)) {
+                return alert('Mã Lệnh này đã tồn tại!');
+            }
+
+            if (woId) {
+                const index = data.findIndex(item => item.id == woId);
+                if (index !== -1) {
+                    const oldWO = data[index];
+                    const updatedProducts = validProducts.map((p, pIdx) => {
+                        const oldProd = (oldWO.products || [])[pIdx];
+                        const productStages = currentStages.map((stName, sIdx) => {
+                            let oldDone = 0;
+                            if (oldProd && oldProd.stages) {
+                                const matched = oldProd.stages.find(s => s.name === stName) || oldProd.stages[sIdx];
+                                if (matched) oldDone = matched.done;
+                            }
+                            return { name: stName, done: oldDone };
+                        });
+                        return { ...p, stages: productStages };
+                    });
+                    data[index] = { ...oldWO, code, products: updatedProducts };
+                }
+            } else {
+                const newProducts = validProducts.map(p => ({
+                    ...p, stages: currentStages.map(st => ({ name: st, done: 0 }))
+                }));
+                data.unshift({ id: 'wo_' + Date.now(), code, products: newProducts, createdAt: Date.now() });
+            }
+
+            saveData();
+            render();
+            closeModal();
+        }
+
+        function deleteWO(woId) {
+            if (confirm('Xóa Lệnh Sản Xuất này?')) {
+                data = data.filter(item => item.id != woId);
+                saveData();
+                render();
+            }
+        }
+
+        function exportData() {
+            if (data.length === 0) return alert('Không có dữ liệu!');
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `lsx_searchable_${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function importData(event) {
+            const input = event.target;
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (Array.isArray(imported)) {
+                        if (confirm('Ghi đè dữ liệu hiện tại?')) {
+                            data = imported;
+                            saveData();
+                            render();
+                        }
+                    } else { alert('File JSON không đúng định dạng!'); }
+                } catch (err) { alert('Lỗi đọc file!'); }
+                input.value = '';
+            };
+            reader.readAsText(file);
+        }
+    </script>
+</body>
+</html>
